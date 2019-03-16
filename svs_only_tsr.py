@@ -18,34 +18,14 @@ Use ARROWS or WASD keys for control.
     Q            : toggle reverse
     Space        : hand-brake
     P            : toggle autopilot
-    M            : toggle manual transmission
-    ,/.          : gear up/down
     C            : change weather (Shift+C reverse)
-    Backspace    : change vehicle
-
-    R            : toggle recording images to disk
     ESC          : quit
 """
 
 from __future__ import print_function
-
-
-# ==============================================================================
-# -- find carla module ---------------------------------------------------------
-# ==============================================================================
-
-
 import glob
 import os
 import sys
-
-try:
-    sys.path.append(glob.glob('**/carla-*%d.%d-%s.egg' % (
-        sys.version_info.major,
-        sys.version_info.minor,
-        'win-amd64' if os.name == 'nt' else 'linux-x86_64'))[0])
-except IndexError:
-    pass
 
 
 # ==============================================================================
@@ -105,6 +85,9 @@ try:
 except ImportError:
     raise RuntimeError('cannot import numpy, make sure numpy package is installed')
 
+
+svs_resolution = ['1280','800'] 
+
 # ==============================================================================
 # -- TSR functions ----------------------------------------------------------
 # ==============================================================================
@@ -124,7 +107,10 @@ class CameraTsr(object):
                    roll=0, pitch=0, yaw=0,
                    camera_type='sensor.camera.rgb', 
                    ):
-
+        ''' The camera type can be also:
+              'sensor.camera.semantic_segmentation'
+               'sensor.camera.depth'
+        '''
         if self.camera is None:
             # Find the blueprint of the sensor.
             blueprint = self.vehicle.get_world().get_blueprint_library().find(camera_type)
@@ -200,7 +186,13 @@ class World(object):
         self.cam1_svs_front = None
         self.cam2_svs_rigtht = None
         self.cam3_svs_back = None
-        self.cam4_svs_rear = None    
+        self.cam4_svs_rear = None
+
+        # SVS semseg cameras
+        self.sem_cam1_svs_front = None
+        self.sem_cam2_svs_rigtht = None
+        self.sem_cam3_svs_back = None
+        self.sem_cam4_svs_rear = None    
 
     def restart(self):
 
@@ -224,25 +216,36 @@ class World(object):
             spawn_point = random.choice(spawn_points) if spawn_points else carla.Transform()
             self.player = self.world.try_spawn_actor(vehicle_bp, spawn_point)
 
-        # Add default view camera for pygame window
-        self.camera_view=CameraTsr(vehicle=self.player, width=str(800), height=str(600), fov="90",pygame_disp=True)
-        self.camera_view.add_camera()
 
         # Svs front camera
-        self.cam1_svs_front=CameraTsr(vehicle=self.player, width=str(320), height=str(200), fov="90")
+        self.cam1_svs_front=CameraTsr(vehicle=self.player, width=svs_resolution[0], height=svs_resolution[1], fov="90",pygame_disp=True)
         self.cam1_svs_front.add_camera(x=0.8, y=0.0, z=1.7, roll=0, pitch=-15, yaw=0)
+        self.camera_view=self.cam1_svs_front
+
+        # Svs semseg gt camera
+        self.sem_cam1_svs_front=CameraTsr(vehicle=self.player, width=svs_resolution[0], height=svs_resolution[1], fov="90")
+        self.sem_cam1_svs_front.add_camera(x=0.8, y=0.0, z=1.7, roll=0, pitch=-15, yaw=0,camera_type='sensor.camera.semantic_segmentation')
 
         # Svs right camera
-        self.cam2_svs_right=CameraTsr(vehicle=self.player, width=str(320), height=str(200), fov="90")
+        self.cam2_svs_right=CameraTsr(vehicle=self.player, width=svs_resolution[0], height=svs_resolution[1], fov="90")
         self.cam2_svs_right.add_camera( x=0.0, y=0.5, z=1.7, roll=0, pitch=-15, yaw=90)
+        # Svs semseg gt camera
+        self.sem_cam2_svs_rigtht=CameraTsr(vehicle=self.player, width=svs_resolution[0], height=svs_resolution[1], fov="90")
+        self.sem_cam2_svs_rigtht.add_camera(x=0.0, y=0.5, z=1.7, roll=0, pitch=-15, yaw=90,camera_type='sensor.camera.semantic_segmentation')
 
         # Svs back camera
-        self.cam3_svs_back=CameraTsr(vehicle=self.player, width=str(320), height=str(200), fov="90")
+        self.cam3_svs_back=CameraTsr(vehicle=self.player, width=svs_resolution[0], height=svs_resolution[1], fov="90")
         self.cam3_svs_back.add_camera(x=-0.8, y=0.0, z=1.7, roll=0, pitch=-15, yaw=180)
+        # Svs semseg gt camera
+        self.sem_cam3_svs_back=CameraTsr(vehicle=self.player, width=svs_resolution[0], height=svs_resolution[1], fov="90")
+        self.sem_cam3_svs_back.add_camera(x=-0.8, y=0.0, z=1.7, roll=0, pitch=-15, yaw=180,camera_type='sensor.camera.semantic_segmentation')
 
         # Svs left camera
-        self.cam4_svs_left=CameraTsr(vehicle=self.player, width=str(320), height=str(200), fov="90")
+        self.cam4_svs_left=CameraTsr(vehicle=self.player, width=svs_resolution[0], height=svs_resolution[1], fov="90")
         self.cam4_svs_left.add_camera(x=0.0, y=-0.5, z=1.7, roll=0, pitch=-15, yaw=270)
+        # Svs semseg gt camera
+        self.sem_cam4_svs_rear=CameraTsr(vehicle=self.player, width=svs_resolution[0], height=svs_resolution[1], fov="90")
+        self.sem_cam4_svs_rear.add_camera(x=0.0, y=-0.5, z=1.7, roll=0, pitch=-15, yaw=270,camera_type='sensor.camera.semantic_segmentation')
 
 
     def next_weather(self, reverse=False):
@@ -261,7 +264,12 @@ class World(object):
             self.cam1_svs_front.camera,
             self.cam2_svs_rigtht.camera,
             self.cam3_svs_back.camera,
-            self.cam4_svs_rear.camera]
+            self.cam4_svs_rear.camera,
+            self.sem_cam1_svs_front.camera,
+            self.sem_cam2_svs_rigtht.camera,
+            self.sem_cam3_svs_back.camera,
+            self.sem_cam4_svs_rear.camera   
+            ]
         for actor in actors:
             if actor is not None:
                 actor.destroy()
@@ -292,8 +300,6 @@ class KeyboardControl(object):
             elif event.type == pygame.KEYUP:
                 if self._is_quit_shortcut(event.key):
                     return True
-                elif event.key == K_BACKSPACE:
-                    world.restart()
                 elif event.key == K_c and pygame.key.get_mods() & KMOD_SHIFT:
                     world.next_weather(reverse=True)
                 elif event.key == K_c:
@@ -301,13 +307,6 @@ class KeyboardControl(object):
                 if isinstance(self._control, carla.VehicleControl):
                     if event.key == K_q:
                         self._control.gear = 1 if self._control.reverse else -1
-                    elif event.key == K_m:
-                        self._control.manual_gear_shift = not self._control.manual_gear_shift
-                        self._control.gear = world.player.get_control().gear
-                    elif self._control.manual_gear_shift and event.key == K_COMMA:
-                        self._control.gear = max(-1, self._control.gear - 1)
-                    elif self._control.manual_gear_shift and event.key == K_PERIOD:
-                        self._control.gear = self._control.gear + 1
                     elif event.key == K_p and not (pygame.key.get_mods() & KMOD_CTRL):
                         self._autopilot_enabled = not self._autopilot_enabled
                         world.player.set_autopilot(self._autopilot_enabled)
@@ -422,8 +421,8 @@ def main():
     argparser.add_argument(
         '--res',
         metavar='WIDTHxHEIGHT',
-        default='800x600',
-        help='window resolution (default: 800x600)')
+        default='1280x800',
+        help='window resolution (default: 1280x800)')
     argparser.add_argument(
         '--filter',
         metavar='PATTERN',
