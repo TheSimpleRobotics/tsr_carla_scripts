@@ -11,10 +11,10 @@
 #include <string>
 #include <pthread.h>
 int main(){
- std::cout<<"This is minimal example of the c++ API for carla.  \
-             The program creates the client and connects to it. \
-             Afterwards it changes the weather of the simulator \
-             to heavy rain. "<<"\n";
+ std::cout<<"This is minimal example of the c++ API for carla.\
+ The program creates the client and connects to it.\
+ Afterwards it changes the weather of the simulator\
+ to heavy rain. "<<"\n";
 
  // The host and port for carla 
  std::string host = "127.0.0.1";
@@ -30,6 +30,7 @@ int main(){
 
  // Retrieve the world
  carla::client::World MyWorld=MyClient.GetWorld();
+
  // Weather parameters
  float cloudyness = 100.0f;
  float precipitation = 100.0f;
