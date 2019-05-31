@@ -88,8 +88,8 @@ except ImportError:
         'cannot import numpy, make sure numpy package is installed')
 
 
-VIEW_WIDTH = '800'
-VIEW_HEIGHT = '600'
+VIEW_WIDTH = '1920'
+VIEW_HEIGHT = '1080'
 VIEW_FOV = '90'
 
 BB_COLOR = (0, 191, 255)
@@ -99,7 +99,12 @@ semseg_cam = False
 # ==============================================================================
 # -- TSR functions ----------------------------------------------------------
 # ==============================================================================
-
+def decode_depth(x,y,depth):
+    d = depth[x,y,0] + depth[x,y,1]*256 + depth[x,y,2]*256*256
+    # Normalize between 0 and 1
+    d = d /  ( 256*256*256 - 1 )
+    # The far plane set 1000 to restore meters
+    return d * 1000 
 # Dummy function for bbox draw
 def bbox_visualize():
     for vehicle in world.world.get_actors().filter('vehicle.*'):
@@ -121,6 +126,7 @@ class CameraTsr(object):
         self._pygame_disp = pygame_disp  # display for pygame
         self._surface = None  # image to render fom array for pygame display
         self.camera = None
+        self.image = None
 
     def add_camera(self, x=-6.5, y=0.0, z=2.7,
                    roll=0, pitch=0, yaw=0,
@@ -164,10 +170,11 @@ class CameraTsr(object):
         array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
         array = np.reshape(array, (image.height, image.width, 4))
         array = array[:, :, :3]
-        array = array[:, :, ::-1]
+        array = array[:, :, ::-1].swapaxes(0, 1)
+        self.image = array 
         if self._pygame_disp:
-            self._surface = pygame.surfarray.make_surface(array.swapaxes(0, 1))
-
+            self._surface = pygame.surfarray.make_surface(array)
+    
     def render(self, display):
         ''' The function gets display class from pygame window
             and render the image from the current camera. '''
@@ -214,6 +221,26 @@ class ClientSideBoundingBoxes(object):
         bounding_boxes = [bb for bb in bounding_boxes if all(bb[:, 2] > 0)]
         return bounding_boxes
 
+    def filter_visible_bbox(depth, bounding_boxes, max_view = 1000):
+        filtered_bboxes = []
+        for bbox in bounding_boxes:
+            for i in range(8):
+              if bbox[i, 0] < 0 or bbox[i, 0] >= int(VIEW_WIDTH): # x condition
+                continue
+              elif bbox[i, 1] < 0 or bbox[i, 1] >= int(VIEW_HEIGHT): # y condition
+                continue
+              elif bbox[i,2] > max_view:
+                continue
+              elif bbox[i, 2] < 0 or bbox[i, 2] > decode_depth (int(bbox[i, 0]),int(bbox[i, 1]), depth): # y condition
+                continue
+
+              else:
+                filtered_bboxes.append(bbox)
+                break
+        return filtered_bboxes         
+       
+
+
     @staticmethod
     def draw_bounding_boxes(display, bounding_boxes):
         """
@@ -226,7 +253,6 @@ class ClientSideBoundingBoxes(object):
             points = [(int(bbox[i, 0]), int(bbox[i, 1])) for i in range(8)]
             # draw lines
             # base
-            pygame.draw.line(bb_surface, BB_COLOR, points[0], points[1])
             pygame.draw.line(bb_surface, BB_COLOR, points[0], points[1])
             pygame.draw.line(bb_surface, BB_COLOR, points[1], points[2])
             pygame.draw.line(bb_surface, BB_COLOR, points[2], points[3])
@@ -423,7 +449,7 @@ class World(object):
             self.camera_view.camera,
             self.cam1_svs_front.camera,
             self.depth_cam1_svs_front.camera,
-            self.sem_cam1_svs_front.camera,
+            #self.sem_cam1_svs_front.camera,
         ]
         for actor in actors:
             if actor is not None:
@@ -511,12 +537,16 @@ class World(object):
                 self.world.tick()
 
                 self.capture = True
-                pygame_clock.tick_busy_loop(15)
+                pygame_clock.tick_busy_loop(10)
 
                 self.render(self.display)
                 bounding_boxes = ClientSideBoundingBoxes.get_bounding_boxes(vehicles, self.camera_view.camera)
-                print(bounding_boxes)
-                ClientSideBoundingBoxes.draw_bounding_boxes(self.display, bounding_boxes)
+                bb_shapers = np.array(bounding_boxes)
+                print('before ', bb_shapers.shape)
+                filtered_boxes = ClientSideBoundingBoxes.filter_visible_bbox(self.depth_cam1_svs_front.image, bounding_boxes, 300)
+                print('after ', np.array(filtered_boxes).shape)
+
+                ClientSideBoundingBoxes.draw_bounding_boxes(self.display, filtered_boxes)
 
                 pygame.display.flip()
 
